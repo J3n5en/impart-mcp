@@ -1,5 +1,5 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
+import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
 import { z } from "zod";
 import {
   AVAILABLE_AGENTS,
@@ -8,6 +8,8 @@ import {
   type AvailableAgentName,
 } from "./agents";
 import { callModel } from "./providers";
+
+const PORT = 3456;
 
 const server = new McpServer({
   name: "multi-agent-mcp",
@@ -38,6 +40,10 @@ server.tool(
     context?: string;
     images?: string[];
   }) => {
+    const startTime = Date.now();
+    const requestId = Math.random().toString(36).slice(2, 6);
+    console.error(`[${requestId}] START ${input.agent} @ ${new Date().toISOString()}`);
+    
     try {
       const config = getAgentConfig(input.agent);
       const cwd = input.cwd || process.cwd();
@@ -57,6 +63,7 @@ server.tool(
         }
       );
 
+      console.error(`[${requestId}] END ${input.agent} @ ${new Date().toISOString()} (${Date.now() - startTime}ms)`);
       return {
         content: [
           {
@@ -73,6 +80,7 @@ server.tool(
     } catch (error) {
       const errorMessage =
         error instanceof Error ? error.message : String(error);
+      console.error(`[${requestId}] ERROR ${input.agent} @ ${new Date().toISOString()} (${Date.now() - startTime}ms): ${errorMessage}`);
       return {
         content: [
           {
@@ -89,13 +97,45 @@ server.tool(
   }
 );
 
-async function main() {
-  const transport = new StdioServerTransport();
-  await server.connect(transport);
-  console.error("Multi-Agent MCP Server running on stdio...");
-}
+const sessions = new Map<string, WebStandardStreamableHTTPServerTransport>();
 
-main().catch((error) => {
-  console.error("Server error:", error);
-  process.exit(1);
+Bun.serve({
+  port: PORT,
+  async fetch(req) {
+    const url = new URL(req.url);
+    
+    if (url.pathname !== "/mcp") {
+      return new Response("Not Found", { status: 404 });
+    }
+
+    const sessionId = req.headers.get("mcp-session-id");
+    let transport: WebStandardStreamableHTTPServerTransport;
+
+    if (sessionId && sessions.has(sessionId)) {
+      transport = sessions.get(sessionId)!;
+    } else if (req.method === "POST" || req.method === "GET") {
+      transport = new WebStandardStreamableHTTPServerTransport({
+        sessionIdGenerator: () => crypto.randomUUID(),
+        onsessioninitialized: (id) => {
+          sessions.set(id, transport);
+          console.error(`Session initialized: ${id}`);
+        },
+      });
+      
+      transport.onclose = () => {
+        if (transport.sessionId) {
+          sessions.delete(transport.sessionId);
+          console.error(`Session closed: ${transport.sessionId}`);
+        }
+      };
+
+      await server.connect(transport);
+    } else {
+      return new Response("Session not found", { status: 404 });
+    }
+
+    return transport.handleRequest(req);
+  },
 });
+
+console.error(`Multi-Agent MCP Server running on http://localhost:${PORT}/mcp`);
