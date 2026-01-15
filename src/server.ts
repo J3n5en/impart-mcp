@@ -15,7 +15,7 @@ const server = new McpServer({
   version: "1.0.0",
 });
 
-type TaskStatus = "running" | "completed" | "error" | "cancelled";
+type TaskStatus = "running" | "completed" | "error";
 
 interface TaskResult {
   status: TaskStatus;
@@ -29,7 +29,6 @@ interface TaskResult {
 }
 
 const tasks = new Map<string, TaskResult>();
-const taskAbortControllers = new Map<string, AbortController>();
 
 function generateTaskId(): string {
   return `task_${Date.now().toString(36)}_${Math.random()
@@ -80,8 +79,6 @@ async function executeAgentTask(
       task.endTime = Date.now();
       console.error(`[${taskId}] ERROR ${agent}: ${task.error}`);
     }
-  } finally {
-    taskAbortControllers.delete(taskId);
   }
 }
 
@@ -221,9 +218,6 @@ get_agent_result(task_2, block=true)
     };
     tasks.set(taskId, task);
 
-    const abortController = new AbortController();
-    taskAbortControllers.set(taskId, abortController);
-
     console.error(`[${taskId}] ASYNC START ${input.agent}`);
 
     executeAgentTask(
@@ -322,123 +316,6 @@ Returns task status and result if completed.`,
         {
           type: "text" as const,
           text: JSON.stringify(result),
-        },
-      ],
-    };
-  }
-);
-
-server.registerTool(
-  "cancel_agent_task",
-  {
-    description: `Cancel a running async agent task.
-Note: Cancellation is best-effort; the underlying process may continue.`,
-    inputSchema: {
-      task_id: z.string().describe("Task ID to cancel"),
-    },
-  },
-  async (input: { task_id: string }) => {
-    const task = tasks.get(input.task_id);
-    const controller = taskAbortControllers.get(input.task_id);
-
-    if (!task) {
-      return {
-        content: [
-          {
-            type: "text" as const,
-            text: JSON.stringify({
-              error: "Task not found",
-              task_id: input.task_id,
-            }),
-          },
-        ],
-        isError: true,
-      };
-    }
-
-    if (task.status !== "running") {
-      return {
-        content: [
-          {
-            type: "text" as const,
-            text: JSON.stringify({
-              task_id: input.task_id,
-              status: task.status,
-              message: "Task is not running",
-            }),
-          },
-        ],
-      };
-    }
-
-    if (controller) {
-      controller.abort();
-      taskAbortControllers.delete(input.task_id);
-    }
-
-    task.status = "cancelled";
-    task.endTime = Date.now();
-    console.error(`[${input.task_id}] CANCELLED`);
-
-    return {
-      content: [
-        {
-          type: "text" as const,
-          text: JSON.stringify({
-            task_id: input.task_id,
-            status: "cancelled",
-          }),
-        },
-      ],
-    };
-  }
-);
-
-server.registerTool(
-  "list_agent_tasks",
-  {
-    description: `List all async agent tasks with their status.
-Useful for checking multiple background tasks at once.`,
-    inputSchema: {
-      status_filter: z
-        .enum(["all", "running", "completed", "error", "cancelled"])
-        .optional()
-        .describe("Filter by status (default: all)"),
-    },
-  },
-  async (input: { status_filter?: TaskStatus | "all" }) => {
-    const filter = input.status_filter ?? "all";
-    const result: Array<{
-      task_id: string;
-      status: TaskStatus;
-      agent: string;
-      elapsed?: number;
-      duration?: number;
-    }> = [];
-
-    for (const [taskId, task] of tasks) {
-      if (filter === "all" || task.status === filter) {
-        const item: (typeof result)[0] = {
-          task_id: taskId,
-          status: task.status,
-          agent: task.agent,
-        };
-
-        if (task.status === "running") {
-          item.elapsed = Date.now() - task.startTime;
-        } else if (task.endTime) {
-          item.duration = task.endTime - task.startTime;
-        }
-
-        result.push(item);
-      }
-    }
-
-    return {
-      content: [
-        {
-          type: "text" as const,
-          text: JSON.stringify({ tasks: result, total: result.length }),
         },
       ],
     };

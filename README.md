@@ -130,8 +130,6 @@ claude mcp add impart-mcp -- impart-mcp
 | `call_agent` | 同步 | 阻塞式调用，适用于需要立即验证结果的场景 |
 | `call_agent_async` | 异步 | 后台启动任务，返回 `task_id`，推荐用于耗时较长的搜索任务 |
 | `get_agent_result` | 查询 | 获取异步任务状态，支持 `block` 模式阻塞等待 |
-| `list_agent_tasks` | 查询 | 列出所有后台任务及其状态 |
-| `cancel_agent_task` | 控制 | 终止正在进行的异步任务 |
 | `call_agents_batch` | 批量 | 并行调用多个 Agent，阻塞直到所有任务完成 |
 
 ### 参数说明
