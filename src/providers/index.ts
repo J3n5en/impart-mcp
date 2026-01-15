@@ -4,23 +4,33 @@ import { createClaudeCode } from "ai-sdk-provider-claude-code";
 import { createGeminiProvider } from "ai-sdk-provider-gemini-cli";
 import type { ProviderType } from "../types";
 
-type ModelConfig = {
-  provider: ProviderType;
-  codexModel?: string;
-  claudeModel?: string;
-  geminiModel?: string;
-};
+const VALID_PROVIDERS: ProviderType[] = ["codex", "claude", "gemini"];
 
-const MODEL_CONFIGS: Record<string, ModelConfig> = {
-  "gpt-5.2": { provider: "codex", codexModel: "gpt-5.2" },
-  "gpt-5.1-codex": { provider: "codex", codexModel: "gpt-5.1-codex" },
-  "gpt-5.1-codex-max": { provider: "codex", codexModel: "gpt-5.1-codex-max" },
-  "claude-opus": { provider: "claude", claudeModel: "opus" },
-  "claude-sonnet": { provider: "claude", claudeModel: "sonnet" },
-  "claude-haiku": { provider: "claude", claudeModel: "haiku" },
-  "gemini-3-pro": { provider: "gemini", geminiModel: "gemini-3-pro-preview" },
-  "gemini-3-flash": { provider: "gemini", geminiModel: "gemini-3-flash-preview" },
-};
+type ParsedModel = { provider: ProviderType; modelName: string };
+
+function parseModelId(modelId: string): ParsedModel {
+  const slashIndex = modelId.indexOf("/");
+  if (slashIndex === -1) {
+    throw new Error(
+      `Invalid model format: "${modelId}". Use "provider/model" (e.g., "codex/gpt-5.2", "claude/sonnet")`
+    );
+  }
+
+  const provider = modelId.slice(0, slashIndex);
+  const modelName = modelId.slice(slashIndex + 1);
+
+  if (!modelName) {
+    throw new Error(`Missing model name in: "${modelId}"`);
+  }
+
+  if (!VALID_PROVIDERS.includes(provider as ProviderType)) {
+    throw new Error(
+      `Unknown provider: "${provider}". Available: ${VALID_PROVIDERS.join(", ")}`
+    );
+  }
+
+  return { provider: provider as ProviderType, modelName };
+}
 
 function mapToClaudeDisallowedTools(denyTools?: string[]): string[] | undefined {
   if (!denyTools || denyTools.length === 0) return undefined;
@@ -48,14 +58,11 @@ function createModel(
   modelId: string,
   denyTools?: string[]
 ): LanguageModel {
-  const config = MODEL_CONFIGS[modelId];
-  if (!config) {
-    throw new Error(`Unknown model: ${modelId}. Available: ${Object.keys(MODEL_CONFIGS).join(", ")}`);
-  }
+  const { provider, modelName } = parseModelId(modelId);
 
-  switch (config.provider) {
+  switch (provider) {
     case "codex": {
-      const provider = createCodexCli({
+      const codexProvider = createCodexCli({
         defaultSettings: {
           cwd,
           allowNpx: true,
@@ -64,27 +71,25 @@ function createModel(
           sandboxMode: getCodexSandboxMode(denyTools),
         },
       });
-      return provider(config.codexModel!);
+      return codexProvider(modelName);
     }
     case "claude": {
       const disallowedTools = mapToClaudeDisallowedTools(denyTools);
-      const provider = createClaudeCode({
+      const claudeProvider = createClaudeCode({
         defaultSettings: {
           cwd,
           settingSources: ["user", "project", "local"],
           ...(disallowedTools && { disallowedTools }),
         },
       });
-      return provider(config.claudeModel!);
+      return claudeProvider(modelName);
     }
     case "gemini": {
-      const provider = createGeminiProvider({
+      const geminiProvider = createGeminiProvider({
         authType: "oauth-personal",
       });
-      return provider(config.geminiModel!);
+      return geminiProvider(modelName);
     }
-    default:
-      throw new Error(`Unknown provider: ${config.provider}`);
   }
 }
 
@@ -112,8 +117,8 @@ export async function callModel(
   usage?: { inputTokens: number; outputTokens: number };
 }> {
   const model = createModel(cwd, modelId, options?.denyTools);
-  const config = MODEL_CONFIGS[modelId];
-  const isGemini = config?.provider === "gemini";
+  const { provider } = parseModelId(modelId);
+  const isGemini = provider === "gemini";
 
   const result = await generateText({
     model,

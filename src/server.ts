@@ -1,37 +1,96 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
+import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
 import {
-  AVAILABLE_AGENTS,
-  getAgentConfig,
-  TOOL_DESCRIPTION,
-  type AvailableAgentName,
+	AVAILABLE_AGENTS,
+	type AvailableAgentName,
+	getAgentConfig,
+	getToolDescription,
+	getAgentEnumDescription,
 } from "./agents";
 import { callModel } from "./providers";
 
-const PORT = 3456;
-
 const server = new McpServer({
-  name: "multi-agent-mcp",
-  version: "1.0.0",
+	name: "multi-agent-mcp",
+	version: "1.0.0",
 });
 
-server.tool(
+
+
+type TaskStatus = "running" | "completed" | "error" | "cancelled";
+
+interface TaskResult {
+	status: TaskStatus;
+	agent: string;
+	model?: string;
+	response?: string;
+	usage?: unknown;
+	error?: string;
+	startTime: number;
+	endTime?: number;
+}
+
+const tasks = new Map<string, TaskResult>();
+const taskAbortControllers = new Map<string, AbortController>();
+
+function generateTaskId(): string {
+	return `task_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`;
+}
+
+async function executeAgentTask(
+  taskId: string,
+  agent: AvailableAgentName,
+  cwd: string,
+  prompt: string,
+  context?: string
+): Promise<void> {
+  const config = getAgentConfig(agent);
+  const userPrompt = context ? `${prompt}\n\n---\nContext:\n${context}` : prompt;
+
+  try {
+    const result = await callModel(cwd, config.model, config.systemPrompt, userPrompt, {
+      temperature: config.temperature,
+      denyTools: config.denyTools,
+    });
+
+    const task = tasks.get(taskId);
+    if (task && task.status === "running") {
+      task.status = "completed";
+      task.model = config.model;
+      task.response = result.text;
+      task.usage = result.usage;
+      task.endTime = Date.now();
+      console.error(`[${taskId}] COMPLETED ${agent} (${task.endTime - task.startTime}ms)`);
+    }
+  } catch (error) {
+    const task = tasks.get(taskId);
+    if (task && task.status === "running") {
+      task.status = "error";
+      task.error = error instanceof Error ? error.message : String(error);
+      task.endTime = Date.now();
+      console.error(`[${taskId}] ERROR ${agent}: ${task.error}`);
+    }
+  } finally {
+    taskAbortControllers.delete(taskId);
+  }
+}
+
+server.registerTool(
   "call_agent",
-  TOOL_DESCRIPTION,
   {
-    agent: z
-      .enum(AVAILABLE_AGENTS)
-      .describe(
-        "The agent to use: oracle | librarian | explore | frontend-ui-ux-engineer | document-writer | multimodal-looker"
-      ),
-    prompt: z.string().describe("The prompt/task for the agent"),
-    cwd: z.string().describe("Working directory for the agent (required)"),
-    context: z.string().optional().describe("Additional context"),
-    images: z
-      .array(z.string())
-      .optional()
-      .describe("Base64 encoded images (only for multimodal-looker)"),
+    description: getToolDescription(),
+    inputSchema: {
+      agent: z
+        .enum(AVAILABLE_AGENTS)
+        .describe(getAgentEnumDescription()),
+      prompt: z.string().describe("The prompt/task for the agent"),
+      cwd: z.string().describe("Working directory for the agent (required)"),
+      context: z.string().optional().describe("Additional context"),
+      images: z
+        .array(z.string())
+        .optional()
+        .describe("Base64 encoded images (only for multimodal-looker)"),
+    },
   },
   async (input: {
     agent: AvailableAgentName;
@@ -42,8 +101,10 @@ server.tool(
   }) => {
     const startTime = Date.now();
     const requestId = Math.random().toString(36).slice(2, 6);
-    console.error(`[${requestId}] START ${input.agent} @ ${new Date().toISOString()}`);
-    
+    console.error(
+      `[${requestId}] START ${input.agent} @ ${new Date().toISOString()}`
+    );
+
     try {
       const config = getAgentConfig(input.agent);
 
@@ -62,7 +123,9 @@ server.tool(
         }
       );
 
-      console.error(`[${requestId}] END ${input.agent} @ ${new Date().toISOString()} (${Date.now() - startTime}ms)`);
+      console.error(
+        `[${requestId}] END ${input.agent} @ ${new Date().toISOString()} (${Date.now() - startTime}ms)`
+      );
       return {
         content: [
           {
@@ -79,7 +142,9 @@ server.tool(
     } catch (error) {
       const errorMessage =
         error instanceof Error ? error.message : String(error);
-      console.error(`[${requestId}] ERROR ${input.agent} @ ${new Date().toISOString()} (${Date.now() - startTime}ms): ${errorMessage}`);
+      console.error(
+        `[${requestId}] ERROR ${input.agent} @ ${new Date().toISOString()} (${Date.now() - startTime}ms): ${errorMessage}`
+      );
       return {
         content: [
           {
@@ -96,46 +161,389 @@ server.tool(
   }
 );
 
-const sessions = new Map<string, WebStandardStreamableHTTPServerTransport>();
+server.registerTool(
+  "call_agent_async",
+  {
+    description: `Start agent task in background (NON-BLOCKING). Returns task_id immediately.
 
-Bun.serve({
-  port: PORT,
-  idleTimeout: 300,
-  async fetch(req) {
-    const url = new URL(req.url);
-    
-    if (url.pathname !== "/mcp") {
-      return new Response("Not Found", { status: 404 });
-    }
+## ✅ Recommended for explore/librarian
 
-    const sessionId = req.headers.get("mcp-session-id");
-    let transport: WebStandardStreamableHTTPServerTransport;
+**Workflow:**
+1. \`call_agent_async\` → get task_id instantly
+2. Continue your work (read files, think, etc.)
+3. \`get_agent_result(task_id, block=true)\` when ready
 
-    if (sessionId && sessions.has(sessionId)) {
-      transport = sessions.get(sessionId)!;
-    } else if (req.method === "POST" || req.method === "GET") {
-      transport = new WebStandardStreamableHTTPServerTransport({
-        sessionIdGenerator: () => crypto.randomUUID(),
-        onsessioninitialized: (id) => {
-          sessions.set(id, transport);
-          console.error(`Session initialized: ${id}`);
-        },
-      });
-      
-      transport.onclose = () => {
-        if (transport.sessionId) {
-          sessions.delete(transport.sessionId);
-          console.error(`Session closed: ${transport.sessionId}`);
-        }
-      };
+**Why async is better:**
+- No wasted waiting time
+- Can launch multiple searches in parallel
+- Check results when YOU need them
 
-      await server.connect(transport);
-    } else {
-      return new Response("Session not found", { status: 404 });
-    }
-
-    return transport.handleRequest(req);
+**Parallel search pattern:**
+\`\`\`
+call_agent_async(explore, "Find X") → task_1
+call_agent_async(librarian, "Find Y") → task_2
+... do other work ...
+get_agent_result(task_1, block=true)
+get_agent_result(task_2, block=true)
+\`\`\``,
+    inputSchema: {
+      agent: z.enum(AVAILABLE_AGENTS).describe(getAgentEnumDescription()),
+      prompt: z.string().describe("The prompt/task for the agent"),
+      cwd: z.string().describe("Working directory for the agent"),
+      context: z.string().optional().describe("Additional context"),
+    },
   },
+  async (input: {
+    agent: AvailableAgentName;
+    prompt: string;
+    cwd: string;
+    context?: string;
+  }) => {
+    const taskId = generateTaskId();
+    const config = getAgentConfig(input.agent);
+
+    const task: TaskResult = {
+      status: "running",
+      agent: config.displayName,
+      startTime: Date.now(),
+    };
+    tasks.set(taskId, task);
+
+    const abortController = new AbortController();
+    taskAbortControllers.set(taskId, abortController);
+
+    console.error(`[${taskId}] ASYNC START ${input.agent}`);
+
+    executeAgentTask(taskId, input.agent, input.cwd, input.prompt, input.context);
+
+    return {
+      content: [
+        {
+          type: "text" as const,
+          text: JSON.stringify({
+            task_id: taskId,
+            agent: config.displayName,
+            status: "running",
+          }),
+        },
+      ],
+    };
+  }
+);
+
+server.registerTool(
+  "get_agent_result",
+  {
+    description: `Get result from async agent task.
+
+Parameters:
+- task_id: The task ID from call_agent_async
+- block: If true, wait for completion (default: false)
+- timeout: Max wait time in ms when blocking (default: 300000 = 5min)
+
+Returns task status and result if completed.`,
+    inputSchema: {
+      task_id: z.string().describe("Task ID from call_agent_async"),
+      block: z.boolean().optional().describe("Wait for completion (default: false)"),
+      timeout: z.number().optional().describe("Max wait time in ms (default: 300000)"),
+    },
+  },
+  async (input: { task_id: string; block?: boolean; timeout?: number }) => {
+    const task = tasks.get(input.task_id);
+
+    if (!task) {
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: JSON.stringify({ error: "Task not found", task_id: input.task_id }),
+          },
+        ],
+        isError: true,
+      };
+    }
+
+    if (input.block && task.status === "running") {
+      const timeout = input.timeout ?? 300000;
+      const startWait = Date.now();
+
+      while (task.status === "running" && Date.now() - startWait < timeout) {
+        await new Promise((resolve) => setTimeout(resolve, 100));
+      }
+    }
+
+    const result: Record<string, unknown> = {
+      task_id: input.task_id,
+      status: task.status,
+      agent: task.agent,
+    };
+
+    if (task.status === "completed") {
+      result.model = task.model;
+      result.response = task.response;
+      result.usage = task.usage;
+      result.duration = task.endTime! - task.startTime;
+    } else if (task.status === "error") {
+      result.error = task.error;
+      result.duration = task.endTime! - task.startTime;
+    } else if (task.status === "running") {
+      result.elapsed = Date.now() - task.startTime;
+    }
+
+    return {
+      content: [
+        {
+          type: "text" as const,
+          text: JSON.stringify(result),
+        },
+      ],
+    };
+  }
+);
+
+server.registerTool(
+  "cancel_agent_task",
+  {
+    description: `Cancel a running async agent task.
+Note: Cancellation is best-effort; the underlying process may continue.`,
+    inputSchema: {
+      task_id: z.string().describe("Task ID to cancel"),
+    },
+  },
+  async (input: { task_id: string }) => {
+    const task = tasks.get(input.task_id);
+    const controller = taskAbortControllers.get(input.task_id);
+
+    if (!task) {
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: JSON.stringify({ error: "Task not found", task_id: input.task_id }),
+          },
+        ],
+        isError: true,
+      };
+    }
+
+    if (task.status !== "running") {
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: JSON.stringify({
+              task_id: input.task_id,
+              status: task.status,
+              message: "Task is not running",
+            }),
+          },
+        ],
+      };
+    }
+
+    if (controller) {
+      controller.abort();
+      taskAbortControllers.delete(input.task_id);
+    }
+
+    task.status = "cancelled";
+    task.endTime = Date.now();
+    console.error(`[${input.task_id}] CANCELLED`);
+
+    return {
+      content: [
+        {
+          type: "text" as const,
+          text: JSON.stringify({
+            task_id: input.task_id,
+            status: "cancelled",
+          }),
+        },
+      ],
+    };
+  }
+);
+
+server.registerTool(
+  "list_agent_tasks",
+  {
+    description: `List all async agent tasks with their status.
+Useful for checking multiple background tasks at once.`,
+    inputSchema: {
+      status_filter: z
+        .enum(["all", "running", "completed", "error", "cancelled"])
+        .optional()
+        .describe("Filter by status (default: all)"),
+    },
+  },
+  async (input: { status_filter?: TaskStatus | "all" }) => {
+    const filter = input.status_filter ?? "all";
+    const result: Array<{
+      task_id: string;
+      status: TaskStatus;
+      agent: string;
+      elapsed?: number;
+      duration?: number;
+    }> = [];
+
+    for (const [taskId, task] of tasks) {
+      if (filter === "all" || task.status === filter) {
+        const item: (typeof result)[0] = {
+          task_id: taskId,
+          status: task.status,
+          agent: task.agent,
+        };
+
+        if (task.status === "running") {
+          item.elapsed = Date.now() - task.startTime;
+        } else if (task.endTime) {
+          item.duration = task.endTime - task.startTime;
+        }
+
+        result.push(item);
+      }
+    }
+
+    return {
+      content: [
+        {
+          type: "text" as const,
+          text: JSON.stringify({ tasks: result, total: result.length }),
+        },
+      ],
+    };
+  }
+);
+
+const agentCallSchema = z.object({
+  agent: z.enum(AVAILABLE_AGENTS).describe(getAgentEnumDescription()),
+  prompt: z.string(),
+  context: z.string().optional(),
+  images: z.array(z.string()).optional(),
 });
 
-console.error(`Multi-Agent MCP Server running on http://localhost:${PORT}/mcp`);
+server.registerTool(
+  "call_agents_batch",
+  {
+    description: `Execute multiple agents in PARALLEL (BLOCKING until ALL complete).
+
+## ⚠️ Usually NOT what you want
+
+**Prefer \`call_agent_async\` × N instead:**
+- Async returns immediately, you can continue working
+- Batch blocks until the SLOWEST agent finishes
+- If one agent takes 2min, you wait 2min doing nothing
+
+**Only use batch when:**
+- You MUST have ALL results before ANY next step
+- Results are interdependent (rare)
+- You're okay blocking for potentially minutes
+
+**Example (usually wrong):**
+\`\`\`json
+{ "calls": [{ "agent": "explore", ... }, { "agent": "librarian", ... }] }
+\`\`\`
+↑ This blocks until both finish. Use call_agent_async × 2 instead.
+
+**Example (correct use case):**
+Comparing outputs from multiple agents where you need all results simultaneously.`,
+    inputSchema: {
+      cwd: z.string().describe("Working directory for all agents (required)"),
+      calls: z
+        .array(agentCallSchema)
+        .min(1)
+        .max(10)
+        .describe("Array of agent calls to execute in parallel (1-10 calls)"),
+    },
+  },
+  async (input: {
+    cwd: string;
+    calls: Array<{
+      agent: AvailableAgentName;
+      prompt: string;
+      context?: string;
+      images?: string[];
+    }>;
+  }) => {
+    const batchId = Math.random().toString(36).slice(2, 6);
+    const startTime = Date.now();
+    console.error(
+      `[${batchId}] BATCH START (${input.calls.length} calls) @ ${new Date().toISOString()}`
+    );
+
+    const executeAgent = async (
+      call: (typeof input.calls)[0],
+      index: number
+    ) => {
+      const callId = `${batchId}-${index}`;
+      const callStart = Date.now();
+      console.error(
+        `[${callId}] START ${call.agent} @ ${new Date().toISOString()}`
+      );
+
+      try {
+        const config = getAgentConfig(call.agent);
+        const userPrompt = call.context
+          ? `${call.prompt}\n\n---\nContext:\n${call.context}`
+          : call.prompt;
+
+        const result = await callModel(
+          input.cwd,
+          config.model,
+          config.systemPrompt,
+          userPrompt,
+          {
+            temperature: config.temperature,
+            denyTools: config.denyTools,
+          }
+        );
+
+        console.error(
+          `[${callId}] END ${call.agent} @ ${new Date().toISOString()} (${Date.now() - callStart}ms)`
+        );
+
+        return {
+          agent: config.displayName,
+          model: config.model,
+          response: result.text,
+          usage: result.usage,
+        };
+      } catch (error) {
+        const errorMessage =
+          error instanceof Error ? error.message : String(error);
+        console.error(
+          `[${callId}] ERROR ${call.agent} @ ${new Date().toISOString()} (${Date.now() - callStart}ms): ${errorMessage}`
+        );
+        return {
+          agent: call.agent,
+          error: errorMessage,
+        };
+      }
+    };
+
+    const results = await Promise.all(
+      input.calls.map((call, index) => executeAgent(call, index))
+    );
+
+    console.error(
+      `[${batchId}] BATCH END @ ${new Date().toISOString()} (${Date.now() - startTime}ms)`
+    );
+
+    return {
+      content: [
+        {
+          type: "text" as const,
+          text: JSON.stringify({
+            batchId,
+            totalTime: Date.now() - startTime,
+            results,
+          }),
+        },
+      ],
+    };
+  }
+);
+
+const transport = new StdioServerTransport();
+await server.connect(transport);
+console.error("Multi-Agent MCP Server running on stdio");

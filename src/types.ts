@@ -9,16 +9,14 @@ export type AgentName =
   | "document-writer"
   | "multimodal-looker";
 
-export type AgentMode = "primary" | "subagent";
-
 export type ProviderType = "codex" | "claude" | "gemini";
 
 export interface AgentConfig {
   name: AgentName;
   displayName: string;
   description: string;
-  mode: AgentMode;
-  provider: ProviderType;
+  enabled: boolean;
+  /** Model identifier in "provider/model" format (e.g., "codex/gpt-5.2", "claude/sonnet") */
   model: string;
   systemPrompt: string;
   temperature?: number;

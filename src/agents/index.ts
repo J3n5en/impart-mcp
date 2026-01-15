@@ -151,9 +151,8 @@ export const agentConfigs: Record<AvailableAgentName, AgentConfig> = {
     displayName: "Oracle",
     description:
       "Read-only consultation agent. High-IQ reasoning specialist for debugging hard problems and high-difficulty architecture design.",
-    mode: "subagent",
-    provider: "codex",
-    model: "gpt-5.2",
+    enabled: true,
+    model: "codex/gpt-5.2",
     systemPrompt: ORACLE_PROMPT,
     temperature: 0.1,
     denyTools: ["write", "edit"],
@@ -163,9 +162,8 @@ export const agentConfigs: Record<AvailableAgentName, AgentConfig> = {
     displayName: "Librarian",
     description:
       "Specialized codebase understanding agent for multi-repository analysis, searching remote codebases, retrieving official documentation, and finding implementation examples.",
-    mode: "subagent",
-    provider: "claude",
-    model: "claude-haiku",
+    enabled: true,
+    model: "claude/haiku",
     systemPrompt: LIBRARIAN_PROMPT,
     temperature: 0.1,
     denyTools: ["write", "edit"],
@@ -175,9 +173,8 @@ export const agentConfigs: Record<AvailableAgentName, AgentConfig> = {
     displayName: "Explore",
     description:
       'Contextual grep for codebases. Answers "Where is X?", "Which file has Y?", "Find the code that does Z".',
-    mode: "subagent",
-    provider: "claude",
-    model: "claude-haiku",
+    enabled: true,
+    model: "claude/haiku",
     systemPrompt: EXPLORE_PROMPT,
     temperature: 0.1,
     denyTools: ["write", "edit"],
@@ -187,9 +184,8 @@ export const agentConfigs: Record<AvailableAgentName, AgentConfig> = {
     displayName: "Frontend UI/UX Engineer",
     description:
       "A designer-turned-developer who crafts stunning UI/UX even without design mockups. Code may be a bit messy, but the visual output is always fire.",
-    mode: "subagent",
-    provider: "claude",
-    model: "claude-sonnet",
+    enabled: true,
+    model: "claude/sonnet",
     systemPrompt: FRONTEND_PROMPT,
   },
   "document-writer": {
@@ -197,9 +193,8 @@ export const agentConfigs: Record<AvailableAgentName, AgentConfig> = {
     displayName: "Document Writer",
     description:
       "A technical writer who crafts clear, comprehensive documentation. Specializes in README files, API docs, architecture docs, and user guides.",
-    mode: "subagent",
-    provider: "claude",
-    model: "claude-haiku",
+    enabled: true,
+    model: "claude/haiku",
     systemPrompt: DOCUMENT_WRITER_PROMPT,
   },
   "multimodal-looker": {
@@ -207,36 +202,115 @@ export const agentConfigs: Record<AvailableAgentName, AgentConfig> = {
     displayName: "Multimodal Looker",
     description:
       "Analyze media files (PDFs, images, diagrams) that require interpretation beyond raw text. Extracts specific information or summaries from documents.",
-    mode: "subagent",
-    provider: "claude",
-    model: "claude-sonnet",
+    enabled: true,
+    model: "claude/sonnet",
     systemPrompt: MULTIMODAL_PROMPT,
     temperature: 0.1,
     denyTools: ["write", "edit", "bash"],
   },
 };
 
-export function getAgentConfig(agentName: AvailableAgentName): AgentConfig {
-  return agentConfigs[agentName];
+type AgentOverride = { model?: string; enabled?: boolean };
+type AgentConfigOverrides = Partial<Record<AvailableAgentName, AgentOverride>>;
+
+function generateDefaultConfig(): AgentConfigOverrides {
+  const config: AgentConfigOverrides = {};
+  for (const name of AVAILABLE_AGENTS) {
+    config[name] = {
+      model: agentConfigs[name].model,
+      enabled: agentConfigs[name].enabled,
+    };
+  }
+  return config;
 }
 
-export const TOOL_DESCRIPTION = `Multi-agent tool with 6 specialized AI agents.
+function applyConfigFromFile(): void {
+  const fs = require("fs");
+  const configPath = process.env.AGENT_CONFIG_PATH;
+  if (!configPath) return;
 
-**CRITICAL: This tool may take 30-120 seconds per call. ALWAYS use "Run in the background" (no timeout) for ALL calls.**
+  if (!fs.existsSync(configPath)) {
+    const defaultConfig = generateDefaultConfig();
+    fs.writeFileSync(configPath, JSON.stringify(defaultConfig, null, 2));
+    console.error(`Created default agent config at ${configPath}`);
+    return;
+  }
 
-## Agent Selection Guide
+  try {
+    const content = fs.readFileSync(configPath, "utf-8");
+    const overrides: AgentConfigOverrides = JSON.parse(content);
 
-| Agent | Use When |
-|-------|----------|
-| **oracle** | Architecture design, complex debugging, security/performance concerns |
-| **librarian** | External library docs, OSS examples, "How do I use [library]?" |
-| **explore** | Internal codebase search, "Where is X?", "Which file has Y?" |
-| **frontend-ui-ux-engineer** | Visual/UI/UX changes: styling, layout, animation |
-| **document-writer** | README, API docs, architecture docs, user guides |
-| **multimodal-looker** | PDF/image/diagram analysis |
+    for (const name of AVAILABLE_AGENTS) {
+      const override = overrides[name];
+      if (!override) continue;
+      if (override.model) agentConfigs[name].model = override.model;
+      if (override.enabled !== undefined) agentConfigs[name].enabled = override.enabled;
+    }
+  } catch (e) {
+    console.error(`Failed to load agent config from ${configPath}:`, e);
+  }
+}
 
-## Execution Rules (MANDATORY)
+applyConfigFromFile();
 
-1. **ALWAYS** execute with "Run in the background" - NO timeout
-2. **NEVER** wait synchronously - results arrive via notification
-3. For multiple agents: fire all in background simultaneously, continue working`;
+export function getAgentConfig(agentName: AvailableAgentName): AgentConfig {
+  const config = agentConfigs[agentName];
+  if (!config.enabled) {
+    throw new Error(`Agent "${agentName}" is disabled`);
+  }
+  return config;
+}
+
+export function getEnabledAgents(): AvailableAgentName[] {
+  return AVAILABLE_AGENTS.filter((name) => agentConfigs[name].enabled);
+}
+
+const ASYNC_AGENTS = ["explore", "librarian"] as const;
+
+function generateAgentList(): string {
+  return getEnabledAgents()
+    .map((name) => {
+      const config = agentConfigs[name];
+      return `- **${name}**: ${config.description}`;
+    })
+    .join("\n");
+}
+
+function generateAgentToolMapping(): string {
+  return getEnabledAgents()
+    .map((name) => {
+      const isAsync = ASYNC_AGENTS.includes(name as (typeof ASYNC_AGENTS)[number]);
+      const tool = isAsync ? "call_agent_async" : "call_agent";
+      const reason = isAsync ? "Search task, run in background" : "Need result immediately";
+      return `| ${name} | \`${tool}\` | ${reason} |`;
+    })
+    .join("\n");
+}
+
+export function getToolDescription(): string {
+  return `Synchronous single agent call (BLOCKING, 30-120s).
+
+## ⚠️ STOP: Choose the Right Tool First
+
+**Decision Tree:**
+1. Need to run explore/librarian? → Use \`call_agent_async\` (NEVER this tool)
+2. Need multiple agents in parallel? → Use \`call_agent_async\` × N, NOT \`call_agents_batch\`
+3. Need oracle advice or must verify result immediately? → Use this tool
+
+**Why async for search agents?**
+- explore/librarian may take 30-120s each
+- Blocking wastes your time waiting
+- Async lets you continue working while agents search
+
+## Available Agents
+${generateAgentList()}
+
+## Agent → Tool Mapping
+| Agent | Tool | Reason |
+|-------|------|--------|
+${generateAgentToolMapping()}`;
+}
+
+export function getAgentEnumDescription(): string {
+  return `The agent to use: ${getEnabledAgents().join(" | ")}`;
+}
