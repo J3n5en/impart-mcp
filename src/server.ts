@@ -192,6 +192,9 @@ server.registerTool(
 call_agent_async(explore, "Find X") → task_1
 call_agent_async(researcher, "Find Y") → task_2
 ... do other work ...
+get_agent_result(task_1, block=false)
+get_agent_result(task_2, block=false)
+... do other work ...
 get_agent_result(task_1, block=true)
 get_agent_result(task_2, block=true)
 \`\`\``,
