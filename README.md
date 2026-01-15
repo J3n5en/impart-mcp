@@ -22,9 +22,9 @@
 |:---|:---|:---|:---|
 | **Advisor** | 架构与调试专家，处理高难度工程问题 | `codex/gpt-5.2` | Read-only |
 | **Researcher** | 代码研究专家，擅长跨仓搜索与文档分析 | `claude/sonnet` | Read-only |
-| **Explore** | 代码定位专家，快速回答「某逻辑在哪里」 | `gemini/flash-3` | Read-only |
-| **Frontend Engineer** | UI/UX 实现专家，独立完成高保真组件 | `gemini/pro-3` | Read-write |
-| **Document Writer** | 技术文档专家，撰写清晰的规范文档 | `gemini/flash-3` | Read-write |
+| **Explore** | 代码定位专家，快速回答「某逻辑在哪里」 | `gemini/gemini-3-flash-preview` | Read-only |
+| **Frontend Engineer** | UI/UX 实现专家，独立完成高保真组件 | `gemini/gemini-3-pro-preview` | Read-write |
+| **Document Writer** | 技术文档专家，撰写清晰的规范文档 | `gemini/gemini-3-flash-preview` | Read-write |
 
 ## 📦 安装说明
 
