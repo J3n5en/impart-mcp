@@ -164,8 +164,8 @@ export const agentConfigs: Record<AvailableAgentName, AgentConfig> = {
     description:
       "Specialized codebase understanding agent for multi-repository analysis, searching remote codebases, retrieving official documentation, and finding implementation examples.",
     mode: "subagent",
-    provider: "gemini",
-    model: "gemini-3-flash",
+    provider: "claude",
+    model: "claude-haiku",
     systemPrompt: LIBRARIAN_PROMPT,
     temperature: 0.1,
     denyTools: ["write", "edit"],
@@ -176,8 +176,8 @@ export const agentConfigs: Record<AvailableAgentName, AgentConfig> = {
     description:
       'Contextual grep for codebases. Answers "Where is X?", "Which file has Y?", "Find the code that does Z".',
     mode: "subagent",
-    provider: "gemini",
-    model: "gemini-3-flash",
+    provider: "claude",
+    model: "claude-haiku",
     systemPrompt: EXPLORE_PROMPT,
     temperature: 0.1,
     denyTools: ["write", "edit"],
@@ -188,8 +188,8 @@ export const agentConfigs: Record<AvailableAgentName, AgentConfig> = {
     description:
       "A designer-turned-developer who crafts stunning UI/UX even without design mockups. Code may be a bit messy, but the visual output is always fire.",
     mode: "subagent",
-    provider: "gemini",
-    model: "gemini-3-pro",
+    provider: "claude",
+    model: "claude-sonnet",
     systemPrompt: FRONTEND_PROMPT,
   },
   "document-writer": {
@@ -198,8 +198,8 @@ export const agentConfigs: Record<AvailableAgentName, AgentConfig> = {
     description:
       "A technical writer who crafts clear, comprehensive documentation. Specializes in README files, API docs, architecture docs, and user guides.",
     mode: "subagent",
-    provider: "gemini",
-    model: "gemini-3-flash",
+    provider: "claude",
+    model: "claude-haiku",
     systemPrompt: DOCUMENT_WRITER_PROMPT,
   },
   "multimodal-looker": {
@@ -208,8 +208,8 @@ export const agentConfigs: Record<AvailableAgentName, AgentConfig> = {
     description:
       "Analyze media files (PDFs, images, diagrams) that require interpretation beyond raw text. Extracts specific information or summaries from documents.",
     mode: "subagent",
-    provider: "gemini",
-    model: "gemini-3-flash",
+    provider: "claude",
+    model: "claude-sonnet",
     systemPrompt: MULTIMODAL_PROMPT,
     temperature: 0.1,
     denyTools: ["write", "edit", "bash"],
