@@ -26,7 +26,7 @@ server.tool(
         "The agent to use: oracle | librarian | explore | frontend-ui-ux-engineer | document-writer | multimodal-looker"
       ),
     prompt: z.string().describe("The prompt/task for the agent"),
-    cwd: z.string().optional().describe("Working directory for the agent (defaults to process.cwd())"),
+    cwd: z.string().describe("Working directory for the agent (required)"),
     context: z.string().optional().describe("Additional context"),
     images: z
       .array(z.string())
@@ -36,7 +36,7 @@ server.tool(
   async (input: {
     agent: AvailableAgentName;
     prompt: string;
-    cwd?: string;
+    cwd: string;
     context?: string;
     images?: string[];
   }) => {
@@ -46,14 +46,13 @@ server.tool(
     
     try {
       const config = getAgentConfig(input.agent);
-      const cwd = input.cwd || process.cwd();
 
       const userPrompt = input.context
         ? `${input.prompt}\n\n---\nContext:\n${input.context}`
         : input.prompt;
 
       const result = await callModel(
-        cwd,
+        input.cwd,
         config.model,
         config.systemPrompt,
         userPrompt,
