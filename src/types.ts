@@ -2,12 +2,11 @@ import { z } from "zod";
 
 export type AgentName =
   | "sisyphus"
-  | "oracle"
-  | "librarian"
+  | "advisor"
+  | "researcher"
   | "explore"
   | "frontend-ui-ux-engineer"
-  | "document-writer"
-  | "multimodal-looker";
+  | "document-writer";
 
 export type ProviderType = "codex" | "claude" | "gemini";
 
@@ -20,8 +19,7 @@ export interface AgentConfig {
   model: string;
   systemPrompt: string;
   temperature?: number;
-  denyTools?: string[];
-  allowTools?: string[];
+  readOnly?: boolean;
 }
 
 export const AgentInputSchema = z.object({

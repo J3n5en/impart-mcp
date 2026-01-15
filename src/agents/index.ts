@@ -1,6 +1,7 @@
 import type { AgentConfig } from "../types";
+import fs from "node:fs";
 
-export const ORACLE_PROMPT = `You are a strategic technical advisor with deep reasoning capabilities.
+export const ADVISOR_PROMPT = `You are a strategic technical advisor with deep reasoning capabilities.
 
 ## Context
 You function as an on-demand specialist invoked when complex analysis or architectural decisions require elevated reasoning.
@@ -22,7 +23,7 @@ You function as an on-demand specialist invoked when complex analysis or archite
 
 **IMPORTANT**: You are READ-ONLY. You provide analysis and recommendations but do NOT write or edit files.`;
 
-export const LIBRARIAN_PROMPT = `You are **THE LIBRARIAN**, a specialized open-source codebase understanding agent.
+export const RESEARCHER_PROMPT = `You are **THE RESEARCHER**, a specialized open-source codebase understanding agent.
 
 Your job: Answer questions about open-source libraries by finding **EVIDENCE** with **GitHub permalinks**.
 
@@ -106,67 +107,38 @@ Create documentation that is accurate, comprehensive, and genuinely useful.
 | Architecture | Overview, Components, Data Flow, Dependencies | Educational |
 | User Guides | Introduction, Prerequisites, Step-by-step, Troubleshooting | Friendly, supportive |`;
 
-export const MULTIMODAL_PROMPT = `You interpret media files that cannot be read as plain text.
-
-Your job: examine the attached file and extract ONLY what was requested.
-
-## When to use you:
-- Media files that cannot be interpreted as plain text
-- Extracting specific information or summaries from documents
-- Describing visual content in images or diagrams
-- When analyzed/extracted data is needed, not raw file contents
-
-## How you work:
-1. Receive a file path and a goal describing what to extract
-2. Read and analyze the file deeply
-3. Return ONLY the relevant extracted information
-
-## For different file types:
-- PDFs: extract text, structure, tables, data from specific sections
-- Images: describe layouts, UI elements, text, diagrams, charts
-- Diagrams: explain relationships, flows, architecture depicted
-
-## Response rules:
-- Return extracted information directly, no preamble
-- If info not found, state clearly what's missing
-- Match the language of the request
-- Be thorough on the goal, concise on everything else
-
-**IMPORTANT**: You are READ-ONLY. You do NOT write or edit files.`;
-
 export const AVAILABLE_AGENTS = [
-  "oracle",
-  "librarian",
+  "advisor",
+  "researcher",
   "explore",
   "frontend-ui-ux-engineer",
   "document-writer",
-  "multimodal-looker",
 ] as const;
 
 export type AvailableAgentName = (typeof AVAILABLE_AGENTS)[number];
 
 export const agentConfigs: Record<AvailableAgentName, AgentConfig> = {
-  oracle: {
-    name: "oracle",
-    displayName: "Oracle",
+  advisor: {
+    name: "advisor",
+    displayName: "Advisor",
     description:
       "Read-only consultation agent. High-IQ reasoning specialist for debugging hard problems and high-difficulty architecture design.",
     enabled: true,
     model: "codex/gpt-5.2",
-    systemPrompt: ORACLE_PROMPT,
+    systemPrompt: ADVISOR_PROMPT,
     temperature: 0.1,
-    denyTools: ["write", "edit"],
+    readOnly: true,
   },
-  librarian: {
-    name: "librarian",
-    displayName: "Librarian",
+  researcher: {
+    name: "researcher",
+    displayName: "Researcher",
     description:
       "Specialized codebase understanding agent for multi-repository analysis, searching remote codebases, retrieving official documentation, and finding implementation examples.",
     enabled: true,
-    model: "claude/haiku",
-    systemPrompt: LIBRARIAN_PROMPT,
+    model: "claude/sonnet",
+    systemPrompt: RESEARCHER_PROMPT,
     temperature: 0.1,
-    denyTools: ["write", "edit"],
+    readOnly: true,
   },
   explore: {
     name: "explore",
@@ -174,10 +146,10 @@ export const agentConfigs: Record<AvailableAgentName, AgentConfig> = {
     description:
       'Contextual grep for codebases. Answers "Where is X?", "Which file has Y?", "Find the code that does Z".',
     enabled: true,
-    model: "claude/haiku",
+    model: "gemini/gemini-3-flash-preview",
     systemPrompt: EXPLORE_PROMPT,
     temperature: 0.1,
-    denyTools: ["write", "edit"],
+    readOnly: true,
   },
   "frontend-ui-ux-engineer": {
     name: "frontend-ui-ux-engineer",
@@ -185,7 +157,7 @@ export const agentConfigs: Record<AvailableAgentName, AgentConfig> = {
     description:
       "A designer-turned-developer who crafts stunning UI/UX even without design mockups. Code may be a bit messy, but the visual output is always fire.",
     enabled: true,
-    model: "claude/sonnet",
+    model: "gemini/gemini-3-pro-preview",
     systemPrompt: FRONTEND_PROMPT,
   },
   "document-writer": {
@@ -194,19 +166,8 @@ export const agentConfigs: Record<AvailableAgentName, AgentConfig> = {
     description:
       "A technical writer who crafts clear, comprehensive documentation. Specializes in README files, API docs, architecture docs, and user guides.",
     enabled: true,
-    model: "claude/haiku",
+    model: "gemini/gemini-3-flash-preview",
     systemPrompt: DOCUMENT_WRITER_PROMPT,
-  },
-  "multimodal-looker": {
-    name: "multimodal-looker",
-    displayName: "Multimodal Looker",
-    description:
-      "Analyze media files (PDFs, images, diagrams) that require interpretation beyond raw text. Extracts specific information or summaries from documents.",
-    enabled: true,
-    model: "claude/sonnet",
-    systemPrompt: MULTIMODAL_PROMPT,
-    temperature: 0.1,
-    denyTools: ["write", "edit", "bash"],
   },
 };
 
@@ -225,7 +186,6 @@ function generateDefaultConfig(): AgentConfigOverrides {
 }
 
 function applyConfigFromFile(): void {
-  const fs = require("fs");
   const configPath = process.env.AGENT_CONFIG_PATH;
   if (!configPath) return;
 
@@ -244,7 +204,8 @@ function applyConfigFromFile(): void {
       const override = overrides[name];
       if (!override) continue;
       if (override.model) agentConfigs[name].model = override.model;
-      if (override.enabled !== undefined) agentConfigs[name].enabled = override.enabled;
+      if (override.enabled !== undefined)
+        agentConfigs[name].enabled = override.enabled;
     }
   } catch (e) {
     console.error(`Failed to load agent config from ${configPath}:`, e);
@@ -265,7 +226,7 @@ export function getEnabledAgents(): AvailableAgentName[] {
   return AVAILABLE_AGENTS.filter((name) => agentConfigs[name].enabled);
 }
 
-const ASYNC_AGENTS = ["explore", "librarian"] as const;
+const ASYNC_AGENTS = ["explore", "researcher"] as const;
 
 function generateAgentList(): string {
   return getEnabledAgents()
@@ -279,9 +240,13 @@ function generateAgentList(): string {
 function generateAgentToolMapping(): string {
   return getEnabledAgents()
     .map((name) => {
-      const isAsync = ASYNC_AGENTS.includes(name as (typeof ASYNC_AGENTS)[number]);
+      const isAsync = ASYNC_AGENTS.includes(
+        name as (typeof ASYNC_AGENTS)[number]
+      );
       const tool = isAsync ? "call_agent_async" : "call_agent";
-      const reason = isAsync ? "Search task, run in background" : "Need result immediately";
+      const reason = isAsync
+        ? "Search task, run in background"
+        : "Need result immediately";
       return `| ${name} | \`${tool}\` | ${reason} |`;
     })
     .join("\n");
@@ -293,12 +258,12 @@ export function getToolDescription(): string {
 ## ⚠️ STOP: Choose the Right Tool First
 
 **Decision Tree:**
-1. Need to run explore/librarian? → Use \`call_agent_async\` (NEVER this tool)
+1. Need to run explore/researcher? → Use \`call_agent_async\` (NEVER this tool)
 2. Need multiple agents in parallel? → Use \`call_agent_async\` × N, NOT \`call_agents_batch\`
-3. Need oracle advice or must verify result immediately? → Use this tool
+3. Need advisor advice or must verify result immediately? → Use this tool
 
 **Why async for search agents?**
-- explore/librarian may take 30-120s each
+- explore/researcher may take 30-120s each
 - Blocking wastes your time waiting
 - Async lets you continue working while agents search
 

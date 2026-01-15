@@ -1,6 +1,6 @@
 import { generateText, type LanguageModel } from "ai";
-import { createCodexCli } from "ai-sdk-provider-codex-cli";
 import { createClaudeCode } from "ai-sdk-provider-claude-code";
+import { createCodexCli } from "ai-sdk-provider-codex-cli";
 import { createGeminiCli } from "ai-sdk-provider-gemini-cli-agentic";
 import type { ProviderType } from "../types";
 
@@ -25,38 +25,21 @@ function parseModelId(modelId: string): ParsedModel {
 
   if (!VALID_PROVIDERS.includes(provider as ProviderType)) {
     throw new Error(
-      `Unknown provider: "${provider}". Available: ${VALID_PROVIDERS.join(", ")}`
+      `Unknown provider: "${provider}". Available: ${VALID_PROVIDERS.join(
+        ", "
+      )}`
     );
   }
 
   return { provider: provider as ProviderType, modelName };
 }
 
-function mapToClaudeDisallowedTools(denyTools?: string[]): string[] | undefined {
-  if (!denyTools || denyTools.length === 0) return undefined;
-  
-  const mapping: Record<string, string> = {
-    write: "Write",
-    edit: "Edit",
-    bash: "Bash",
-    delete: "Delete",
-  };
-  
-  return denyTools.map((tool) => mapping[tool.toLowerCase()] || tool);
-}
-
-function getCodexSandboxMode(denyTools?: string[]): "read-only" | "workspace-write" {
-  if (!denyTools) return "workspace-write";
-  const hasWriteRestriction = denyTools.some((t) =>
-    ["write", "edit"].includes(t.toLowerCase())
-  );
-  return hasWriteRestriction ? "read-only" : "workspace-write";
-}
+const CLAUDE_READ_ONLY_TOOLS = ["Write", "Edit", "Bash", "Delete"];
 
 function createModel(
   cwd: string,
   modelId: string,
-  denyTools?: string[]
+  readOnly?: boolean
 ): LanguageModel {
   const { provider, modelName } = parseModelId(modelId);
 
@@ -68,18 +51,17 @@ function createModel(
           allowNpx: true,
           skipGitRepoCheck: true,
           approvalMode: "never",
-          sandboxMode: getCodexSandboxMode(denyTools),
+          sandboxMode: readOnly ? "read-only" : "workspace-write",
         },
       });
       return codexProvider(modelName);
     }
     case "claude": {
-      const disallowedTools = mapToClaudeDisallowedTools(denyTools);
       const claudeProvider = createClaudeCode({
         defaultSettings: {
           cwd,
           settingSources: ["user", "project", "local"],
-          ...(disallowedTools && { disallowedTools }),
+          ...(readOnly && { disallowedTools: CLAUDE_READ_ONLY_TOOLS }),
         },
       });
       return claudeProvider(modelName);
@@ -88,7 +70,7 @@ function createModel(
       const geminiProvider = createGeminiCli({
         defaultSettings: {
           cwd,
-          approvalMode: "yolo",
+          approvalMode: readOnly ? "default" : "yolo",
         },
       });
       return geminiProvider(modelName);
@@ -113,13 +95,13 @@ export async function callModel(
   userPrompt: string,
   options?: {
     temperature?: number;
-    denyTools?: string[];
+    readOnly?: boolean;
   }
 ): Promise<{
   text: string;
   usage?: { inputTokens: number; outputTokens: number };
 }> {
-  const model = createModel(cwd, modelId, options?.denyTools);
+  const model = createModel(cwd, modelId, options?.readOnly);
 
   const result = await generateText({
     model,
@@ -130,7 +112,7 @@ export async function callModel(
 
   const finishReason = result.steps?.[0]?.finishReason;
   const rawFinishReason = result.steps?.[0]?.rawFinishReason;
-  
+
   if (!result.text && finishReason !== "stop") {
     throw new Error(
       `Model returned empty response. finishReason: ${finishReason}, rawFinishReason: ${rawFinishReason}`

@@ -1,17 +1,45 @@
 {
-  "name": "impactai",
-  "version": "1.0.0",
+  "name": "impart-mcp",
+  "version": "1.0.1",
+  "description": "MCP server for AI agent orchestration - integrate Claude Code, Codex CLI, and Gemini CLI as expert agents",
   "type": "module",
-  "private": true,
   "bin": {
-    "impactai-mcp": "./src/server.ts"
+    "impart-mcp": "./dist/server.js"
   },
+  "main": "./dist/server.js",
+  "files": [
+    "dist"
+  ],
   "scripts": {
+    "build": "tsup",
+    "prepublishOnly": "npm run build",
     "start": "bun run src/server.ts",
+    "start:node": "node dist/server.js",
     "dev": "bun --watch src/server.ts"
   },
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "ai",
+    "agent",
+    "claude",
+    "gemini",
+    "codex",
+    "llm"
+  ],
+  "author": "",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": ""
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
   "devDependencies": {
-    "@types/bun": "latest"
+    "@types/bun": "latest",
+    "@types/node": "^22",
+    "tsup": "^8.5.0"
   },
   "peerDependencies": {
     "typescript": "^5"
@@ -21,7 +49,7 @@
     "ai": "^6.0.35",
     "ai-sdk-provider-claude-code": "^3.2.1",
     "ai-sdk-provider-codex-cli": "^1.0.4",
-    "ai-sdk-provider-gemini-cli-agentic": "github:J3n5en/ai-sdk-provider-gemini-cli-agentic",
+    "ai-sdk-provider-gemini-cli-agentic": "^0.1.0",
     "zod": "^4.3.5"
   }
 }

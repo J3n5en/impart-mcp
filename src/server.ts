@@ -2,39 +2,39 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
 import {
-	AVAILABLE_AGENTS,
-	type AvailableAgentName,
-	getAgentConfig,
-	getToolDescription,
-	getAgentEnumDescription,
+  AVAILABLE_AGENTS,
+  type AvailableAgentName,
+  getAgentConfig,
+  getAgentEnumDescription,
+  getToolDescription,
 } from "./agents";
 import { callModel } from "./providers";
 
 const server = new McpServer({
-	name: "multi-agent-mcp",
-	version: "1.0.0",
+  name: "impart-mcp",
+  version: "1.0.0",
 });
-
-
 
 type TaskStatus = "running" | "completed" | "error" | "cancelled";
 
 interface TaskResult {
-	status: TaskStatus;
-	agent: string;
-	model?: string;
-	response?: string;
-	usage?: unknown;
-	error?: string;
-	startTime: number;
-	endTime?: number;
+  status: TaskStatus;
+  agent: string;
+  model?: string;
+  response?: string;
+  usage?: unknown;
+  error?: string;
+  startTime: number;
+  endTime?: number;
 }
 
 const tasks = new Map<string, TaskResult>();
 const taskAbortControllers = new Map<string, AbortController>();
 
 function generateTaskId(): string {
-	return `task_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`;
+  return `task_${Date.now().toString(36)}_${Math.random()
+    .toString(36)
+    .slice(2, 6)}`;
 }
 
 async function executeAgentTask(
@@ -45,13 +45,21 @@ async function executeAgentTask(
   context?: string
 ): Promise<void> {
   const config = getAgentConfig(agent);
-  const userPrompt = context ? `${prompt}\n\n---\nContext:\n${context}` : prompt;
+  const userPrompt = context
+    ? `${prompt}\n\n---\nContext:\n${context}`
+    : prompt;
 
   try {
-    const result = await callModel(cwd, config.model, config.systemPrompt, userPrompt, {
-      temperature: config.temperature,
-      denyTools: config.denyTools,
-    });
+    const result = await callModel(
+      cwd,
+      config.model,
+      config.systemPrompt,
+      userPrompt,
+      {
+        temperature: config.temperature,
+        readOnly: config.readOnly,
+      }
+    );
 
     const task = tasks.get(taskId);
     if (task && task.status === "running") {
@@ -60,7 +68,9 @@ async function executeAgentTask(
       task.response = result.text;
       task.usage = result.usage;
       task.endTime = Date.now();
-      console.error(`[${taskId}] COMPLETED ${agent} (${task.endTime - task.startTime}ms)`);
+      console.error(
+        `[${taskId}] COMPLETED ${agent} (${task.endTime - task.startTime}ms)`
+      );
     }
   } catch (error) {
     const task = tasks.get(taskId);
@@ -80,9 +90,7 @@ server.registerTool(
   {
     description: getToolDescription(),
     inputSchema: {
-      agent: z
-        .enum(AVAILABLE_AGENTS)
-        .describe(getAgentEnumDescription()),
+      agent: z.enum(AVAILABLE_AGENTS).describe(getAgentEnumDescription()),
       prompt: z.string().describe("The prompt/task for the agent"),
       cwd: z.string().describe("Working directory for the agent (required)"),
       context: z.string().optional().describe("Additional context"),
@@ -119,12 +127,14 @@ server.registerTool(
         userPrompt,
         {
           temperature: config.temperature,
-          denyTools: config.denyTools,
+          readOnly: config.readOnly,
         }
       );
 
       console.error(
-        `[${requestId}] END ${input.agent} @ ${new Date().toISOString()} (${Date.now() - startTime}ms)`
+        `[${requestId}] END ${input.agent} @ ${new Date().toISOString()} (${
+          Date.now() - startTime
+        }ms)`
       );
       return {
         content: [
@@ -143,7 +153,9 @@ server.registerTool(
       const errorMessage =
         error instanceof Error ? error.message : String(error);
       console.error(
-        `[${requestId}] ERROR ${input.agent} @ ${new Date().toISOString()} (${Date.now() - startTime}ms): ${errorMessage}`
+        `[${requestId}] ERROR ${input.agent} @ ${new Date().toISOString()} (${
+          Date.now() - startTime
+        }ms): ${errorMessage}`
       );
       return {
         content: [
@@ -166,7 +178,7 @@ server.registerTool(
   {
     description: `Start agent task in background (NON-BLOCKING). Returns task_id immediately.
 
-## ✅ Recommended for explore/librarian
+## ✅ Recommended for explore/researcher
 
 **Workflow:**
 1. \`call_agent_async\` → get task_id instantly
@@ -181,7 +193,7 @@ server.registerTool(
 **Parallel search pattern:**
 \`\`\`
 call_agent_async(explore, "Find X") → task_1
-call_agent_async(librarian, "Find Y") → task_2
+call_agent_async(researcher, "Find Y") → task_2
 ... do other work ...
 get_agent_result(task_1, block=true)
 get_agent_result(task_2, block=true)
@@ -214,7 +226,13 @@ get_agent_result(task_2, block=true)
 
     console.error(`[${taskId}] ASYNC START ${input.agent}`);
 
-    executeAgentTask(taskId, input.agent, input.cwd, input.prompt, input.context);
+    executeAgentTask(
+      taskId,
+      input.agent,
+      input.cwd,
+      input.prompt,
+      input.context
+    );
 
     return {
       content: [
@@ -244,8 +262,14 @@ Parameters:
 Returns task status and result if completed.`,
     inputSchema: {
       task_id: z.string().describe("Task ID from call_agent_async"),
-      block: z.boolean().optional().describe("Wait for completion (default: false)"),
-      timeout: z.number().optional().describe("Max wait time in ms (default: 300000)"),
+      block: z
+        .boolean()
+        .optional()
+        .describe("Wait for completion (default: false)"),
+      timeout: z
+        .number()
+        .optional()
+        .describe("Max wait time in ms (default: 300000)"),
     },
   },
   async (input: { task_id: string; block?: boolean; timeout?: number }) => {
@@ -256,7 +280,10 @@ Returns task status and result if completed.`,
         content: [
           {
             type: "text" as const,
-            text: JSON.stringify({ error: "Task not found", task_id: input.task_id }),
+            text: JSON.stringify({
+              error: "Task not found",
+              task_id: input.task_id,
+            }),
           },
         ],
         isError: true,
@@ -319,7 +346,10 @@ Note: Cancellation is best-effort; the underlying process may continue.`,
         content: [
           {
             type: "text" as const,
-            text: JSON.stringify({ error: "Task not found", task_id: input.task_id }),
+            text: JSON.stringify({
+              error: "Task not found",
+              task_id: input.task_id,
+            }),
           },
         ],
         isError: true,
@@ -441,7 +471,7 @@ server.registerTool(
 
 **Example (usually wrong):**
 \`\`\`json
-{ "calls": [{ "agent": "explore", ... }, { "agent": "librarian", ... }] }
+{ "calls": [{ "agent": "explore", ... }, { "agent": "researcher", ... }] }
 \`\`\`
 ↑ This blocks until both finish. Use call_agent_async × 2 instead.
 
@@ -468,7 +498,9 @@ Comparing outputs from multiple agents where you need all results simultaneously
     const batchId = Math.random().toString(36).slice(2, 6);
     const startTime = Date.now();
     console.error(
-      `[${batchId}] BATCH START (${input.calls.length} calls) @ ${new Date().toISOString()}`
+      `[${batchId}] BATCH START (${
+        input.calls.length
+      } calls) @ ${new Date().toISOString()}`
     );
 
     const executeAgent = async (
@@ -494,12 +526,14 @@ Comparing outputs from multiple agents where you need all results simultaneously
           userPrompt,
           {
             temperature: config.temperature,
-            denyTools: config.denyTools,
+            readOnly: config.readOnly,
           }
         );
 
         console.error(
-          `[${callId}] END ${call.agent} @ ${new Date().toISOString()} (${Date.now() - callStart}ms)`
+          `[${callId}] END ${call.agent} @ ${new Date().toISOString()} (${
+            Date.now() - callStart
+          }ms)`
         );
 
         return {
@@ -512,7 +546,9 @@ Comparing outputs from multiple agents where you need all results simultaneously
         const errorMessage =
           error instanceof Error ? error.message : String(error);
         console.error(
-          `[${callId}] ERROR ${call.agent} @ ${new Date().toISOString()} (${Date.now() - callStart}ms): ${errorMessage}`
+          `[${callId}] ERROR ${call.agent} @ ${new Date().toISOString()} (${
+            Date.now() - callStart
+          }ms): ${errorMessage}`
         );
         return {
           agent: call.agent,
@@ -526,7 +562,9 @@ Comparing outputs from multiple agents where you need all results simultaneously
     );
 
     console.error(
-      `[${batchId}] BATCH END @ ${new Date().toISOString()} (${Date.now() - startTime}ms)`
+      `[${batchId}] BATCH END @ ${new Date().toISOString()} (${
+        Date.now() - startTime
+      }ms)`
     );
 
     return {
@@ -546,4 +584,4 @@ Comparing outputs from multiple agents where you need all results simultaneously
 
 const transport = new StdioServerTransport();
 await server.connect(transport);
-console.error("Multi-Agent MCP Server running on stdio");
+console.error("impart-mcp running on stdio");
