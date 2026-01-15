@@ -106,6 +106,20 @@ bun run build  # 构建产物
 4. Type: `command`
 5. Command: `npx impart-mcp@latest`（或全局安装后直接使用 `impart-mcp`）
 
+### 配置到 Claude Code
+
+使用 `claude mcp add` 命令一键添加：
+
+```bash
+claude mcp add impart-mcp -- npx impart-mcp@latest
+```
+
+或全局安装后：
+
+```bash
+claude mcp add impart-mcp -- impart-mcp
+```
+
 ## ⚙️ 配置说明
 
 默认情况下，所有 Agent 使用内置的默认配置即可运行，无需额外配置。
