@@ -57,47 +57,6 @@ bun run build  # 构建产物
 
 ## 🔌 使用集成
 
-### 配置到 Claude Desktop
-
-编辑 `claude_desktop_config.json`：
-- macOS: `~/Library/Application Support/Claude/claude_desktop_config.json`
-- Windows: `%APPDATA%\Claude\claude_desktop_config.json`
-
-**方式一：使用 npx（推荐）**
-```json
-{
-  "mcpServers": {
-    "impart-mcp": {
-      "command": "npx",
-      "args": ["impart-mcp@latest"]
-    }
-  }
-}
-```
-
-**方式二：全局安装后使用**
-```json
-{
-  "mcpServers": {
-    "impart-mcp": {
-      "command": "impart-mcp"
-    }
-  }
-}
-```
-
-**方式三：从源码运行（Bun）**
-```json
-{
-  "mcpServers": {
-    "impart-mcp": {
-      "command": "bun",
-      "args": ["run", "/path/to/impart-mcp/src/server.ts"]
-    }
-  }
-}
-```
-
 ### 配置到 Cursor
 
 1. 打开 Cursor 设置 -> Features -> MCP。
