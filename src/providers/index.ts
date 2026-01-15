@@ -71,6 +71,7 @@ function createModel(
       const provider = createClaudeCode({
         defaultSettings: {
           cwd,
+          settingSources: ["user", "project", "local"],
           ...(disallowedTools && { disallowedTools }),
         },
       });

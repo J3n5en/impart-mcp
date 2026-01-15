@@ -100,6 +100,7 @@ const sessions = new Map<string, WebStandardStreamableHTTPServerTransport>();
 
 Bun.serve({
   port: PORT,
+  idleTimeout: 300,
   async fetch(req) {
     const url = new URL(req.url);
     

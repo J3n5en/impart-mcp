@@ -222,28 +222,21 @@ export function getAgentConfig(agentName: AvailableAgentName): AgentConfig {
 
 export const TOOL_DESCRIPTION = `Multi-agent tool with 6 specialized AI agents.
 
+**CRITICAL: This tool may take 30-120 seconds per call. ALWAYS use "Run in the background" (no timeout) for ALL calls.**
+
 ## Agent Selection Guide
 
 | Agent | Use When |
 |-------|----------|
-| **oracle** | Architecture design, complex debugging (2+ failed attempts), security/performance concerns, multi-system tradeoffs |
-| **librarian** | External library docs, OSS implementation examples, "How do I use [library]?", unfamiliar packages |
-| **explore** | Internal codebase search, "Where is X?", "Which file has Y?", cross-layer pattern discovery |
-| **frontend-ui-ux-engineer** | Visual/UI/UX changes: styling, layout, animation, typography, colors, responsive design |
-| **document-writer** | README, API docs, architecture docs, user guides, technical documentation |
-| **multimodal-looker** | PDF/image/diagram analysis, extracting info from visual content |
+| **oracle** | Architecture design, complex debugging, security/performance concerns |
+| **librarian** | External library docs, OSS examples, "How do I use [library]?" |
+| **explore** | Internal codebase search, "Where is X?", "Which file has Y?" |
+| **frontend-ui-ux-engineer** | Visual/UI/UX changes: styling, layout, animation |
+| **document-writer** | README, API docs, architecture docs, user guides |
+| **multimodal-looker** | PDF/image/diagram analysis |
 
-## Parallel Execution (IMPORTANT)
+## Execution Rules (MANDATORY)
 
-For tasks involving multiple agents or long-running analysis, **ALWAYS run in background** (no timeout):
-- Use Claude's built-in "Run in the background" feature
-- System will notify you when complete
-- Do NOT poll or wait synchronously
-
-**Example - parallel agent calls:**
-\`\`\`
-// Run multiple agents in background simultaneously
-call_agent({ agent: "explore", prompt: "Find auth code" })        // Run in background
-call_agent({ agent: "librarian", prompt: "JWT best practices" })  // Run in background
-// Continue with other work, results arrive via notification
-\`\`\``;
+1. **ALWAYS** execute with "Run in the background" - NO timeout
+2. **NEVER** wait synchronously - results arrive via notification
+3. For multiple agents: fire all in background simultaneously, continue working`;
