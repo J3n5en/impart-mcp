@@ -1,7 +1,7 @@
 import { generateText, type LanguageModel } from "ai";
 import { createCodexCli } from "ai-sdk-provider-codex-cli";
 import { createClaudeCode } from "ai-sdk-provider-claude-code";
-import { createGeminiProvider } from "ai-sdk-provider-gemini-cli";
+import { createGeminiCli } from "ai-sdk-provider-gemini-cli-agentic";
 import type { ProviderType } from "../types";
 
 const VALID_PROVIDERS: ProviderType[] = ["codex", "claude", "gemini"];
@@ -85,8 +85,11 @@ function createModel(
       return claudeProvider(modelName);
     }
     case "gemini": {
-      const geminiProvider = createGeminiProvider({
-        authType: "oauth-personal",
+      const geminiProvider = createGeminiCli({
+        defaultSettings: {
+          cwd,
+          approvalMode: "yolo",
+        },
       });
       return geminiProvider(modelName);
     }
@@ -117,15 +120,12 @@ export async function callModel(
   usage?: { inputTokens: number; outputTokens: number };
 }> {
   const model = createModel(cwd, modelId, options?.denyTools);
-  const { provider } = parseModelId(modelId);
-  const isGemini = provider === "gemini";
 
   const result = await generateText({
     model,
     system: systemPrompt,
     prompt: userPrompt,
     temperature: options?.temperature,
-    ...(isGemini && { toolChoice: "none" as const }),
   });
 
   const finishReason = result.steps?.[0]?.finishReason;
