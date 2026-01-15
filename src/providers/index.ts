@@ -70,7 +70,7 @@ function createModel(
       const geminiProvider = createGeminiCli({
         defaultSettings: {
           cwd,
-          approvalMode: readOnly ? "default" : "yolo",
+          approvalMode: readOnly ? "default" : "auto_edit",
         },
       });
       return geminiProvider(modelName);
