@@ -233,36 +233,17 @@ export const TOOL_DESCRIPTION = `Multi-agent tool with 6 specialized AI agents.
 | **document-writer** | README, API docs, architecture docs, user guides, technical documentation |
 | **multimodal-looker** | PDF/image/diagram analysis, extracting info from visual content |
 
-## Execution Modes
+## Parallel Execution (IMPORTANT)
 
-### Synchronous (call_agent)
-Use \`call_agent\` for quick tasks where you need immediate results. Blocks until completion.
+For tasks involving multiple agents or long-running analysis, **ALWAYS run in background** (no timeout):
+- Use Claude's built-in "Run in the background" feature
+- System will notify you when complete
+- Do NOT poll or wait synchronously
 
-### Asynchronous (start_task)
-Use \`start_task\` for background execution when:
-- Task may take longer (complex analysis, large codebase exploration)
-- You want to run multiple agents truly in parallel
-- You don't need the result immediately
-
-**Background task workflow:**
-1. \`start_task\` → returns \`task_id\` immediately
-2. \`get_task_status\` → check if running/completed/failed
-3. \`get_task_result\` → retrieve full result when completed
-4. \`list_tasks\` → view all tasks and their status
-
-**Example - parallel background tasks:**
+**Example - parallel agent calls:**
 \`\`\`
-// Start multiple tasks simultaneously
-start_task({ agent: "explore", prompt: "Find auth code" })
-start_task({ agent: "librarian", prompt: "JWT best practices" })
-// Both run in parallel, check results later with get_task_result
+// Run multiple agents in background simultaneously
+call_agent({ agent: "explore", prompt: "Find auth code" })        // Run in background
+call_agent({ agent: "librarian", prompt: "JWT best practices" })  // Run in background
+// Continue with other work, results arrive via notification
 \`\`\``;
-
-export const START_TASK_DESCRIPTION = `Start a background task that runs asynchronously. Returns immediately with a task_id.
-
-Use this instead of call_agent when:
-- The task may take a while
-- You want true parallel execution of multiple agents
-- You don't need the result immediately
-
-After starting, use get_task_status or get_task_result to check progress.`;
