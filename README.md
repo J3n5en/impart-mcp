@@ -33,7 +33,7 @@
 无需安装，直接在 MCP 配置中使用：
 
 ```bash
-npx impart-mcp
+npx impart-mcp@latest
 ```
 
 ### 方式二：全局安装
@@ -69,7 +69,7 @@ bun run build  # 构建产物
   "mcpServers": {
     "impart-mcp": {
       "command": "npx",
-      "args": ["impart-mcp"]
+      "args": ["impart-mcp@latest"]
     }
   }
 }
@@ -104,7 +104,7 @@ bun run build  # 构建产物
 2. 添加新的 MCP Server。
 3. Name: `impart-mcp`
 4. Type: `command`
-5. Command: `npx impart-mcp`（或全局安装后直接使用 `impart-mcp`）
+5. Command: `npx impart-mcp@latest`（或全局安装后直接使用 `impart-mcp`）
 
 ## ⚙️ 配置说明
 
@@ -119,7 +119,7 @@ bun run build  # 构建产物
   "mcpServers": {
     "impart-mcp": {
       "command": "npx",
-      "args": ["impart-mcp"],
+      "args": ["impart-mcp@latest"],
       "env": {
         "AGENT_CONFIG_PATH": "/path/to/your/agent-config.json"
       }
